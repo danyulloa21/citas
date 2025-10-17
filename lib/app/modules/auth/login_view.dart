@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:agenda_citas/app/widgets/modal.dart';
 import 'login_controller.dart';
 
 class LoginView extends GetView<LoginController> {
@@ -70,7 +71,7 @@ class LoginView extends GetView<LoginController> {
                     () => OutlinedButton.icon(
                       onPressed: controller.loading.value
                           ? null
-                          : controller.signInWithGoogle, // ⭐️ Google OAuth
+                          : controller.signInWithGoogle,
                       icon: const Icon(Icons.login),
                       label: const Text('Continuar con Google'),
                     ),
@@ -80,40 +81,37 @@ class LoginView extends GetView<LoginController> {
                     onPressed: controller.loading.value
                         ? null
                         : () async {
-                            final emailInput = await showDialog<String?>(
-                              context: context,
-                              builder: (ctx) {
-                                final temp = TextEditingController(
-                                  text: controller.email.value,
-                                );
-                                return AlertDialog(
-                                  title: const Text('Recuperar contraseña'),
-                                  content: TextField(
-                                    controller: temp,
-                                    keyboardType: TextInputType.emailAddress,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Email',
-                                    ),
+                            final temp = TextEditingController(
+                              text: controller.email.value,
+                            );
+                            await VModal.show(
+                              title: 'Recuperar contraseña',
+                              children: [
+                                TextField(
+                                  controller: temp,
+                                  keyboardType: TextInputType.emailAddress,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Email',
                                   ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(ctx).pop(),
-                                      child: const Text('Cancelar'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.of(
-                                        ctx,
-                                      ).pop(temp.text.trim()),
-                                      child: const Text('Enviar'),
-                                    ),
-                                  ],
-                                );
+                                ),
+                              ],
+                              cancelText: 'Cancelar',
+                              confirmText: 'Enviar',
+                              onConfirm: () async {
+                                final emailInput = temp.text.trim();
+                                if (emailInput.isEmpty) {
+                                  Get.snackbar(
+                                    'Aviso',
+                                    'Ingresa un email válido',
+                                    snackPosition: SnackPosition.BOTTOM,
+                                  );
+                                  return false; // no cerrar el modal
+                                }
+                                controller.email.value = emailInput;
+                                await controller.forgotPassword();
+                                return true; // cerrar el modal
                               },
                             );
-                            if (emailInput != null && emailInput.isNotEmpty) {
-                              controller.email.value = emailInput;
-                              await controller.forgotPassword();
-                            }
                           },
                     child: const Text('Olvidé mi contraseña'),
                   ),

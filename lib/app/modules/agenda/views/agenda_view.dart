@@ -6,6 +6,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:agenda_citas/app/layout/app_layout.dart';
 import 'package:agenda_citas/app/data/models/evento.dart';
 import 'package:agenda_citas/app/modules/configuracion/controllers/configuracion_controller.dart';
+import 'package:agenda_citas/app/widgets/modal.dart';
 
 class AgendaView extends GetView<AgendaController> {
   final ConfiguracionController configCtrl =
@@ -121,27 +122,17 @@ class AgendaView extends GetView<AgendaController> {
                         : '';
                     return GestureDetector(
                       onLongPress: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Eliminar evento'),
-                            content: Text('¿Deseas eliminar "${e.summary}"?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(ctx).pop(false),
-                                child: const Text('Cancelar'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.of(ctx).pop(true),
-                                child: const Text('Eliminar'),
-                              ),
-                            ],
-                          ),
+                        await VModal.show(
+                          title: 'Eliminar evento',
+                          leadingIcon: const Icon(Icons.event),
+                          children: [Text('¿Deseas eliminar "${e.summary}"?')],
+                          cancelText: 'Cancelar',
+                          confirmText: 'Eliminar',
+                          onConfirm: () async {
+                            configCtrl.removeEvent(e);
+                            return true; // cerrar modal
+                          },
                         );
-
-                        if (confirm == true) {
-                          configCtrl.removeEvent(e);
-                        }
                       },
                       child: ListTile(
                         leading: const Icon(Icons.event_note),

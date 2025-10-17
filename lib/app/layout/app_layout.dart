@@ -4,6 +4,8 @@ import 'package:agenda_citas/app/modules/configuracion/controllers/configuracion
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+// ⭐️ VModal (modal reutilizable)
+import '../widgets/modal.dart';
 import '../widgets/auth_status_widget.dart';
 
 class AppLayout extends StatelessWidget {
@@ -96,28 +98,34 @@ class AppLayout extends StatelessWidget {
               title: const Text('Cerrar sesión'),
               textColor: Colors.redAccent,
               onTap: () async {
-                final confirm = await showDialog<bool>(
-                  context: Get.context!,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Confirmar'),
-                    content: const Text('¿Deseas cerrar sesión?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(false),
-                        child: const Text('Cancelar'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () => Navigator.of(ctx).pop(true),
-                        child: const Text('Cerrar sesión'),
-                      ),
-                    ],
-                  ),
+                await VModal.show(
+                  title: 'Confirmar',
+                  leadingIcon: const Icon(Icons.logout),
+                  children: const [Text('¿Deseas cerrar sesión?')],
+                  cancelText: 'Cancelar',
+                  confirmText: 'Cerrar sesión',
+                  onConfirm: () async {
+                    try {
+                      await Supabase.instance.client.auth.signOut(
+                        scope: SignOutScope.global,
+                      );
+                      // ⭐️ Cerrar el Drawer si está abierto
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
+                      // ⭐️ Navegar al login (el listener de auth también puede manejarlo)
+                      Get.offAllNamed('/login');
+                      return true; // cerrar modal
+                    } catch (e) {
+                      Get.snackbar(
+                        'Error',
+                        'No se pudo cerrar sesión: $e',
+                        snackPosition: SnackPosition.BOTTOM,
+                      );
+                      return false; // mantener modal abierto
+                    }
+                  },
                 );
-                if (confirm == true) {
-                  await Supabase.instance.client.auth.signOut(
-                    scope: SignOutScope.global,
-                  );
-                }
               },
             ),
           ],

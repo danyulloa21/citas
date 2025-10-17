@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:agenda_citas/app/modules/configuracion/controllers/configuracion_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/auth_status_widget.dart';
 
 class AppLayout extends StatelessWidget {
@@ -88,6 +89,36 @@ class AppLayout extends StatelessWidget {
                 vertical: 8.0,
               ),
               child: Row(children: const [Expanded(child: AuthStatusWidget())]),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.redAccent),
+              title: const Text('Cerrar sesión'),
+              textColor: Colors.redAccent,
+              onTap: () async {
+                final confirm = await showDialog<bool>(
+                  context: Get.context!,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Confirmar'),
+                    content: const Text('¿Deseas cerrar sesión?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Cancelar'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: const Text('Cerrar sesión'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  await Supabase.instance.client.auth.signOut(
+                    scope: SignOutScope.global,
+                  );
+                }
+              },
             ),
           ],
         ),

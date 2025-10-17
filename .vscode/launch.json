@@ -36,6 +36,14 @@
         "--web-port=8088",
         "--web-browser-flag=--user-data-dir=/tmp/chrome"
       ]
+    },
+    {
+      "name": "Flutter: Debug Verbose (current device)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": ["--verbose"]
     }
   ]
 }

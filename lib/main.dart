@@ -6,6 +6,9 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'app/routes/app_pages.dart';
 import 'app/services/theme_service.dart';
+import 'app/services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'app/modules/auth/login_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,28 +18,62 @@ void main() async {
   // ⭐️ Carga única de variables de entorno desde assets/.env para TODAS las plataformas
   const envFile = 'assets/.env';
   try {
-    await dotenv.load(fileName: envFile); // ⭐️
+    await dotenv.load(fileName: envFile);
     debugPrint('⭐️ dotenv loaded: $envFile');
   } catch (e) {
     debugPrint('⭐️ dotenv not loaded ($envFile): $e');
   }
 
-  try {
-    final res = await TransparentGoogleAuthService.initializeTransparentAuth();
-    if (res) {
-      print('✅ Google Auth initialized successfully');
-    } else {
-      print('⚠️ Google Auth initialization failed or was cancelled');
+  // Inicializar Supabase si hay variables de entorno
+  final supaUrl = dotenv.env['SUPABASE_URL'];
+  final supaKey = dotenv.env['SUPABASE_API_KEY'];
+  if (supaUrl != null && supaKey != null) {
+    try {
+      await Supabase.initialize(url: supaUrl, anonKey: supaKey);
+      SupabaseService.instance.client = Supabase.instance.client;
+      debugPrint('✅ Supabase initialized');
+    } catch (e) {
+      debugPrint('⚠️ Supabase init failed: $e');
     }
-  } catch (e) {
-    print('Error initializing Google Auth: $e');
+  } else {
+    debugPrint('⚠️ SUPABASE_URL or SUPABASE_ANON_KEY not found in env');
   }
+
+  Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+    final event = data.event;
+    // final session = data.session; // si lo necesitas
+    switch (event) {
+      case AuthChangeEvent.signedIn:
+        final loginCtrl = Get.isRegistered<LoginController>()
+            ? Get.find<LoginController>()
+            : Get.put(LoginController());
+        await loginCtrl.insertarUsuario();
+        // Usuario autenticado: ve al home
+        Get.offAllNamed('/home');
+        break;
+      case AuthChangeEvent.signedOut:
+        Get.offAllNamed('/login');
+        break;
+      default:
+        break;
+    }
+  });
 
   runApp(const VetApp());
 }
 
-class VetApp extends StatelessWidget {
+class VetApp extends StatefulWidget {
   const VetApp({super.key});
+
+  @override
+  State<VetApp> createState() => _VetAppState();
+}
+
+class _VetAppState extends State<VetApp> {
+  @override
+  void initState() {
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +83,7 @@ class VetApp extends StatelessWidget {
       () => GetMaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'VetCitas',
-        initialRoute: AppPages.initial,
+        initialRoute: AppPages.initialRoute(),
         getPages: AppPages.routes,
         theme: ThemeData.light(),
         darkTheme: ThemeData.dark(),

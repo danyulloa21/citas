@@ -1,5 +1,5 @@
 import 'package:agenda_citas/app/services/calendar_service.dart';
-import 'package:agenda_citas/app/services/google_auth_service.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
@@ -15,7 +15,6 @@ void main() async {
   await GetStorage.init();
   Get.put<CalendarCacheService>(CalendarCacheService(), permanent: true);
 
-  // ⭐️ Carga única de variables de entorno desde assets/.env para TODAS las plataformas
   const envFile = 'assets/.env';
   try {
     await dotenv.load(fileName: envFile);

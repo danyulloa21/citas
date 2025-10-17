@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter: Debug iPhone 16 Plus",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "deviceId": "715B122C-3871-41D3-8535-5A8CDF20C837"
+    },
+    {
+      "name": "Flutter: Debug macOS",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "deviceId": "macos"
+    },
+    {
+      "name": "Flutter: Debug Android Emulator",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "deviceId": "android"
+    },
+    {
+      "name": "Flutter Web (Chrome sin CORS)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "-d",
+        "chrome",
+        "--web-port=8088",
+        "--web-browser-flag=--user-data-dir=/tmp/chrome"
+      ]
+    }
+  ]
+}

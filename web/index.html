@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="agenda_citas">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>agenda_citas</title>
+  <link rel="manifest" href="manifest.json">
+  <!-- Google Identity Services script for web one-tap / button -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    // Minimal initialization helper: when google.accounts.id calls the
+    // callback with a credential response, we forward it to the Flutter app
+    // via window.postMessage so Dart code can handle it.
+    function __agenda_citas_gsi_callback(response) {
+      try {
+        window.postMessage({
+          type: 'GSI_CREDENTIAL_RESPONSE',
+          credential: response.credential
+        }, '*');
+      } catch (e) {
+        console.error('GSI callback postMessage failed', e);
+      }
+    }
+
+    // Optional: you could call google.accounts.id.initialize here if you want
+    // to set up prompt: true and an immediate one-tap. We'll rely on the
+    // dart code or the DOM renderButton to initialize with the client id.
+  </script>
+
+  <script>
+    // Expose helpers to initialize GSI and render a button into a container.
+    // This keeps initialization in index.html (Option A) while Dart only
+    // triggers these helpers.
+    window.__agenda_citas_gsi_init = function (clientId) {
+      try {
+        if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+          console.warn('GSI script not loaded yet');
+          return false;
+        }
+
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: __agenda_citas_gsi_callback,
+        });
+        return true;
+      } catch (e) {
+        console.error('GSI init error', e);
+        return false;
+      }
+    };
+
+    window.__agenda_citas_gsi_render = function (containerId, opts) {
+      try {
+        if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+          console.warn('GSI script not loaded yet');
+          return false;
+        }
+
+        var container = document.getElementById(containerId);
+        if (!container) {
+          console.warn('GSI render: container not found', containerId);
+          return false;
+        }
+
+        window.google.accounts.id.renderButton(container, opts || { theme: 'outline', size: 'large' });
+        return true;
+      } catch (e) {
+        console.error('GSI render error', e);
+        return false;
+      }
+    };
+  </script>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

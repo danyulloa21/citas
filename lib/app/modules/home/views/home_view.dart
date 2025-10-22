@@ -116,8 +116,7 @@ class HomeView extends GetView<HomeController> {
                           TextButton.icon(
                             onPressed: controller.configCtrl.calendarId.isEmpty
                                 ? null
-                                : () => controller.configCtrl
-                                      .loadEventsFromCalendar(),
+                                : () => controller.refreshCalendarEvents(),
                             icon: const Icon(Icons.refresh),
                             label: const Text('Actualizar'),
                           ),
@@ -127,7 +126,19 @@ class HomeView extends GetView<HomeController> {
                       const SizedBox(height: 12),
 
                       Obx(() {
-                        final calendarId = controller.configCtrl.calendarId;
+                        final config = controller.configCtrl;
+                        final calendarId = config.calendarId;
+
+                        // ⭐️ Mostrar spinner mientras se cargan los eventos
+                        if (controller.isLoading.value) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 24.0),
+                              child: CircularProgressIndicator(),
+                            ),
+                          );
+                        }
+
                         if (calendarId.isEmpty) {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,7 +155,7 @@ class HomeView extends GetView<HomeController> {
                           );
                         }
 
-                        final evs = controller.configCtrl.events;
+                        final evs = config.events;
                         if (evs.isEmpty) {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

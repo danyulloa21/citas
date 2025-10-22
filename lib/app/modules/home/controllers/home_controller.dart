@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class HomeController extends GetxController {
   final greeting = 'Bienvenido a'.obs;
+  final isLoading = false.obs;
 
   // Acceso al controlador de configuración
   final configCtrl = Get.find<ConfiguracionController>();
@@ -14,12 +15,25 @@ class HomeController extends GetxController {
   @override
   void onReady() {
     super.onReady();
-    // Al entrar en la vista, sólo cargar eventos automáticamente si ya
-    // estamos autenticados y existe un calendarId. No forzamos login aquí.
-    if (configCtrl.calendarId.isNotEmpty &&
-        Supabase.instance.client.auth.currentSession != null) {
-      // No await para no bloquear la UI
-      configCtrl.loadEventsFromCalendar();
+    // Si hay sesión activa, siempre pedimos/confirmamos calendario
+    // y luego cargamos eventos. No forzamos login desde aquí.
+    final hasSession = Supabase.instance.client.auth.currentSession != null;
+    if (!hasSession) return;
+
+    // No 'await' para no bloquear la UI; el ConfiguracionController muestra spinner.
+    isLoading.value = true;
+    refreshCalendarEvents().whenComplete(() => isLoading.value = false);
+  }
+
+  /// Permite refrescar manualmente: pide/valida calendario y luego carga eventos
+  Future<void> refreshCalendarEvents() async {
+    if (Supabase.instance.client.auth.currentSession == null) return;
+
+    isLoading.value = true;
+    try {
+      await configCtrl.loadEventsFromCalendar();
+    } finally {
+      isLoading.value = false;
     }
   }
 }

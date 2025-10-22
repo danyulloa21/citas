@@ -6,7 +6,6 @@ import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // ⭐️ VModal (modal reutilizable)
 import '../widgets/modal.dart';
-import '../widgets/auth_status_widget.dart';
 
 class AppLayout extends StatelessWidget {
   final String title;
@@ -84,14 +83,7 @@ class AppLayout extends StatelessWidget {
               title: const Text('Configuración'),
               onTap: () => Get.offAllNamed('/config'),
             ),
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 8.0,
-              ),
-              child: Row(children: const [Expanded(child: AuthStatusWidget())]),
-            ),
+
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.redAccent),
@@ -110,7 +102,7 @@ class AppLayout extends StatelessWidget {
                         scope: SignOutScope.global,
                       );
                       // ⭐️ Cerrar el Drawer si está abierto
-                      if (Navigator.of(context).canPop()) {
+                      if (context.mounted && Navigator.of(context).canPop()) {
                         Navigator.of(context).pop();
                       }
                       // ⭐️ Navega a login inmediatamente tras signOut (el listener del LoginController no está activo en Home)

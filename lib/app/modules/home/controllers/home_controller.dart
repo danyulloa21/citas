@@ -1,6 +1,6 @@
 import 'package:agenda_citas/app/modules/configuracion/controllers/configuracion_controller.dart';
-import 'package:agenda_citas/app/services/google_auth_service.dart';
 import 'package:get/get.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class HomeController extends GetxController {
   final greeting = 'Bienvenido a'.obs;
@@ -17,8 +17,8 @@ class HomeController extends GetxController {
     // Al entrar en la vista, sólo cargar eventos automáticamente si ya
     // estamos autenticados y existe un calendarId. No forzamos login aquí.
     if (configCtrl.calendarId.isNotEmpty &&
-        TransparentGoogleAuthService.isSignedIn) {
-      // No await aquí para no bloquear la UI; el controlador mostrará mensajes si hay errores
+        Supabase.instance.client.auth.currentSession != null) {
+      // No await para no bloquear la UI
       configCtrl.loadEventsFromCalendar();
     }
   }

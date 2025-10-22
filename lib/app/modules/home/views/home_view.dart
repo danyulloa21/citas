@@ -3,8 +3,7 @@ import 'dart:convert';
 import 'package:agenda_citas/app/layout/app_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:agenda_citas/app/services/google_auth_service.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../controllers/home_controller.dart';
 
@@ -66,13 +65,15 @@ class HomeView extends GetView<HomeController> {
 
               const SizedBox(height: 16),
 
-              // Authentication-aware body: when not signed-in show only a warning + login button
-              StreamBuilder<GoogleSignInAccount?>(
-                stream: TransparentGoogleAuthService.onCurrentUserChanged,
+              // Authentication-aware body using Supabase session
+              StreamBuilder<AuthState>(
+                stream: Supabase.instance.client.auth.onAuthStateChange,
                 builder: (context, snapshot) {
-                  final signedIn = snapshot.hasData && snapshot.data != null;
+                  final hasSession = snapshot.hasData
+                      ? snapshot.data!.session != null
+                      : Supabase.instance.client.auth.currentSession != null;
 
-                  if (!signedIn) {
+                  if (!hasSession) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8.0),
                       child: Card(
@@ -83,15 +84,13 @@ class HomeView extends GetView<HomeController> {
                             children: [
                               const Expanded(
                                 child: Text(
-                                  'No estás autenticado con Google. Algunas funciones requieren iniciar sesión.',
+                                  'No has iniciado sesión. Algunas funciones requieren acceder con tu cuenta.',
                                 ),
                               ),
                               ElevatedButton.icon(
-                                onPressed: () async {
-                                  await TransparentGoogleAuthService.initializeTransparentAuth();
-                                },
+                                onPressed: () => Get.toNamed('/login'),
                                 icon: const Icon(Icons.login),
-                                label: const Text('Iniciar sesión'),
+                                label: const Text('Ir a iniciar sesión'),
                               ),
                             ],
                           ),

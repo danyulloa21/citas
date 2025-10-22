@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../configuracion/controllers/configuracion_controller.dart';
+
 import '../../services/supabase_service.dart';
 
 class LoginController extends GetxController {
@@ -24,6 +26,18 @@ class LoginController extends GetxController {
         if (!ok) {
           await Supabase.instance.client.auth.signOut();
           return;
+        }
+        // ⭐️ Antes de navegar a Home, asegúrate de configurar el calendarId si falta
+        try {
+          final configCtrl = Get.isRegistered<ConfiguracionController>()
+              ? Get.find<ConfiguracionController>()
+              : Get.put<ConfiguracionController>(
+                  ConfiguracionController(),
+                  permanent: true,
+                );
+          await configCtrl.ensureCalendarId();
+        } catch (e) {
+          // Si por alguna razón no se puede crear/encontrar el controlador, no bloqueamos el flujo
         }
         // Navega solo si no estamos en /home y no hay navegación en curso
         if (!_navigating && Get.currentRoute != '/home') {
@@ -172,8 +186,14 @@ class LoginController extends GetxController {
         redirectTo: 'com.vetcitas.app://login-callback', // tu deep link
         authScreenLaunchMode: LaunchMode
             .externalApplication, // ⭐️ Usa ASWebAuthenticationSession/Custom Tabs
-        scopes: 'email profile openid',
-        queryParams: {'prompt': 'select_account'},
+        scopes:
+            'openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events',
+        queryParams: {
+          'prompt':
+              'consent select_account', // fuerza re-consentir y poder elegir cuenta
+          'access_type':
+              'offline', // intenta obtener refresh token del proveedor
+        },
       );
       // ⭐️ No seteamos loading=false aquí; lo haremos en onAuthStateChange.signedIn
     } on AuthException catch (e) {

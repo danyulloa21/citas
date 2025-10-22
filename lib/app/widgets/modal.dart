@@ -11,6 +11,9 @@ class VModal {
   /// Muestra un modal reutilizable con título, contenido y acciones.
   /// Si [onConfirm] devuelve `true` (o se omite), el modal se cierra.
   /// Si devuelve `false`, permanece abierto.
+  /// [canClose]: si devuelve false, el modal NO puede cerrarse con la X,
+  /// cancelar, atrás o tocando fuera. No afecta cierres programáticos vía
+  /// VModal.close(result: ...).
   static Future<T?> show<T>({
     BuildContext? context,
     required String title,
@@ -20,12 +23,13 @@ class VModal {
     String confirmText = 'Confirmar',
     String cancelText = 'Cancelar',
     bool showCancel = true,
-    bool barrierDismissible = true,
+    barrierDismissible = true,
     bool useRootNavigator = true,
     Widget? leadingIcon,
     EdgeInsetsGeometry contentPadding = const EdgeInsets.fromLTRB(20, 8, 20, 0),
     double maxWidth = 560,
     CrossAxisAlignment contentAlignment = CrossAxisAlignment.stretch,
+    bool Function()? canClose,
   }) async {
     final ctx = context ?? Get.context;
     assert(ctx != null, 'Se requiere un BuildContext o Get.context');
@@ -40,7 +44,8 @@ class VModal {
 
     return showDialog<T>(
       context: ctx!,
-      barrierDismissible: barrierDismissible && !loading,
+      barrierDismissible:
+          barrierDismissible && !loading && (canClose?.call() ?? true),
       useRootNavigator: useRootNavigator,
       builder: (dialogCtx) {
         return StatefulBuilder(
@@ -65,6 +70,7 @@ class VModal {
             }
 
             void handleDismiss() {
+              if (canClose?.call() == false) return;
               if (loading) return;
               try {
                 onDismiss?.call();
@@ -74,7 +80,7 @@ class VModal {
             }
 
             return WillPopScope(
-              onWillPop: () async => !loading,
+              onWillPop: () async => !loading && (canClose?.call() ?? true),
               child: AlertDialog(
                 insetPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -106,7 +112,9 @@ class VModal {
                     IconButton(
                       tooltip: 'Cerrar',
                       icon: const Icon(Icons.close),
-                      onPressed: loading ? null : handleDismiss,
+                      onPressed: loading || (canClose?.call() == false)
+                          ? null
+                          : handleDismiss,
                     ),
                   ],
                 ),
@@ -145,7 +153,9 @@ class VModal {
                 actions: <Widget>[
                   if (showCancel)
                     TextButton(
-                      onPressed: loading ? null : handleDismiss,
+                      onPressed: loading || (canClose?.call() == false)
+                          ? null
+                          : handleDismiss,
                       child: Text(cancelText),
                     ),
                   FilledButton.icon(

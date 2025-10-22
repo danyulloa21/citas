@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:agenda_citas/app/data/models/evento.dart';
-import 'package:agenda_citas/app/services/google_auth_service.dart';
-import 'package:http/http.dart' as http;
 
 class GoogleCalendarApiWidget extends StatefulWidget {
   final double? height;
@@ -17,13 +14,9 @@ class GoogleCalendarApiWidget extends StatefulWidget {
 }
 
 class _GoogleCalendarApiWidgetState extends State<GoogleCalendarApiWidget> {
-  bool _loading = false;
+  final bool _loading = false;
   String? _error;
-  List<Evento> _events = [];
-
-  // Default calendarId (same as used elsewhere). Puedes pasar otro via constructor.
-  static const _defaultCalendarId =
-      '02fe70469480b93b808fbbbbc7fbcb453059735d42171b343626393437d2314b%40group.calendar.google.com';
+  final List<Evento> _events = [];
 
   @override
   void initState() {
@@ -32,7 +25,7 @@ class _GoogleCalendarApiWidgetState extends State<GoogleCalendarApiWidget> {
   }
 
   Future<void> _loadEvents() async {
-    setState(() {
+    /* setState(() {
       _loading = true;
       _error = null;
     });
@@ -131,7 +124,7 @@ class _GoogleCalendarApiWidgetState extends State<GoogleCalendarApiWidget> {
         _error = 'Error: $e';
         _loading = false;
       });
-    }
+    } */
   }
 
   @override

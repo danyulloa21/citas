@@ -1,5 +1,3 @@
-import 'package:agenda_citas/app/services/calendar_service.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
@@ -8,12 +6,10 @@ import 'app/routes/app_pages.dart';
 import 'app/services/theme_service.dart';
 import 'app/services/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'app/modules/auth/login_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
-  Get.put<CalendarCacheService>(CalendarCacheService(), permanent: true);
 
   const envFile = 'assets/.env';
   try {

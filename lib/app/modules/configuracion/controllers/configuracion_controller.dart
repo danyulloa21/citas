@@ -1,5 +1,10 @@
 import 'dart:convert';
 
+import 'package:agenda_citas/app/services/google_calendar_service.dart';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:agenda_citas/app/widgets/modal.dart';
 import 'package:image_cropper/image_cropper.dart';
 
 import 'package:flutter/material.dart';
@@ -8,7 +13,6 @@ import 'package:get_storage/get_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:agenda_citas/app/data/models/evento.dart';
 
-import 'package:agenda_citas/app/services/google_auth_service.dart';
 import 'package:http/http.dart' as http;
 
 class ConfiguracionController extends GetxController {
@@ -33,8 +37,9 @@ class ConfiguracionController extends GetxController {
     _logo.value = _storage.read('logo') ?? '';
     _isDark.value = _storage.read('isDark') ?? Get.isDarkMode;
 
-    _calendarId.value = _storage.read('calendarId') ?? '';
-    calendarIdCtrl.text = _calendarId.value;
+    // Sesión sin persistencia de calendarId
+    _calendarId.value = '';
+    calendarIdCtrl.text = '';
   }
 
   void setNombre(String nombre) {
@@ -52,15 +57,13 @@ class ConfiguracionController extends GetxController {
 
   void clearCalendarId() {
     _calendarId.value = '';
-    _storage.remove('calendarId');
     calendarIdCtrl.text = '';
   }
 
   void saveCalendarId() {
     final id = calendarIdCtrl.text.trim();
     if (id.isEmpty) return;
-    _calendarId.value = id;
-    _storage.write('calendarId', id);
+    _calendarId.value = id; // Solo en memoria para la sesión actual
   }
 
   void _extractAndCacheCalendarId(String url) {
@@ -72,8 +75,7 @@ class ConfiguracionController extends GetxController {
       String? src = uri.queryParameters['src'];
       if (src != null && src.isNotEmpty) {
         final decoded = Uri.decodeComponent(src);
-        _calendarId.value = decoded;
-        _storage.write('calendarId', decoded);
+        _calendarId.value = decoded; // no persistimos en almacenamiento
         return;
       }
 
@@ -83,8 +85,7 @@ class ConfiguracionController extends GetxController {
       final m = reg.firstMatch(full);
       if (m != null) {
         final id = Uri.decodeComponent(m.group(1)!);
-        _calendarId.value = id;
-        _storage.write('calendarId', id);
+        _calendarId.value = id; // no persistimos en almacenamiento
         return;
       }
 
@@ -135,118 +136,228 @@ class ConfiguracionController extends GetxController {
   }
 
   Future<void> loadEventsFromCalendar() async {
-    // Preferir Google Calendar API si tenemos un calendarId
-    final id = _calendarId.value;
-
-    if (id.isNotEmpty) {
-      // Usar Google Calendar API
-      final ok = await TransparentGoogleAuthService.ensureAuthenticated();
-      if (!ok) {
+    // 1) Asegura que exista un calendarId seleccionado para esta sesión
+    var id = _calendarId.value.trim();
+    if (id.isEmpty) {
+      await ensureCalendarId();
+      id = _calendarId.value.trim();
+      if (id.isEmpty) {
         Get.snackbar(
-          'Error',
-          'No se pudo autenticar con Google. Inicia sesión primero.',
+          'Calendario',
+          'Debes seleccionar un calendario para cargar eventos.',
           snackPosition: SnackPosition.BOTTOM,
           backgroundColor: Colors.orange,
           colorText: Colors.white,
         );
         return;
       }
+    }
 
-      final headers = TransparentGoogleAuthService.authHeaders;
-      if (headers == null) {
-        Get.snackbar(
-          'Error',
-          'No se encontraron headers de autenticación.',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
-        return;
-      }
+    // 2) Obtén el access token de Google desde la sesión de Supabase (requiere scope calendar.readonly)
+    final token = Supabase.instance.client.auth.currentSession?.providerToken;
+    if (token == null || token.isEmpty) {
+      Get.snackbar(
+        'Autenticación requerida',
+        'No se encontró un access token de Google en la sesión. Inicia sesión nuevamente con permisos de Calendar.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
 
-      try {
-        // Queremos incluir TODO el día actual (desde 00:00) para que
-        // eventos ocurridos antes de la hora actual sigan apareciendo.
-        final nowLocal = DateTime.now();
-        final startOfTodayLocal = DateTime(
-          nowLocal.year,
-          nowLocal.month,
-          nowLocal.day,
-        );
-        final timeMin = startOfTodayLocal.toUtc().toIso8601String();
-        final timeMax = startOfTodayLocal
-            .add(const Duration(days: 365))
-            .toUtc()
-            .toIso8601String();
+    try {
+      // 3) Define ventana de tiempo: desde hoy (00:00 local) hasta +365 días
+      final nowLocal = DateTime.now();
+      final startOfTodayLocal = DateTime(
+        nowLocal.year,
+        nowLocal.month,
+        nowLocal.day,
+      );
+      final timeMin = startOfTodayLocal.toUtc().toIso8601String();
+      final timeMax = startOfTodayLocal
+          .add(const Duration(days: 365))
+          .toUtc()
+          .toIso8601String();
 
-        final uri = Uri.https(
-          'www.googleapis.com',
-          '/calendar/v3/calendars/$id/events',
-          {
+      // 4) Llama Google Calendar API (Events: list)
+      final uri =
+          Uri.https('www.googleapis.com', '/calendar/v3/calendars/$id/events', {
             'singleEvents': 'true',
             'orderBy': 'startTime',
             'timeMin': timeMin,
             'timeMax': timeMax,
             'maxResults': '250',
-          },
+          });
+
+      final resp = await http.get(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (resp.statusCode != 200) {
+        throw Exception(
+          'Google Calendar API respondió ${resp.statusCode}: ${resp.body}',
         );
+      }
 
-        final resp = await http.get(uri, headers: headers);
-        if (resp.statusCode != 200) {
-          throw Exception('Google Calendar API: ${resp.statusCode}');
+      // 5) Parsear respuesta a lista de Evento
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final items = (data['items'] as List<dynamic>?) ?? const [];
+
+      DateTime? parseDate(dynamic v) {
+        if (v == null) return null;
+        if (v is String) return DateTime.tryParse(v);
+        if (v is Map<String, dynamic>) {
+          // All-day events traen 'date'; eventos con hora traen 'dateTime'
+          if (v['dateTime'] != null) return DateTime.tryParse(v['dateTime']);
+          if (v['date'] != null) return DateTime.tryParse(v['date']);
         }
+        return null;
+      }
 
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final items = (data['items'] as List<dynamic>?) ?? [];
+      final parsed = <Evento>[];
+      for (final it in items.cast<Map<String, dynamic>>()) {
+        final startObj = it['start'];
+        final endObj = it['end'];
+        final start = parseDate(startObj);
+        final end = parseDate(endObj);
 
-        final parsed = <Evento>[];
-        for (final it in items.cast<Map<String, dynamic>>()) {
-          final startObj = it['start'];
-          final endObj = it['end'];
+        if (start == null) continue; // sin inicio, se ignora
 
-          DateTime? parseDate(dynamic v) {
-            if (v == null) return null;
-            if (v is String) return DateTime.tryParse(v);
-            if (v is Map<String, dynamic>) {
-              if (v['dateTime'] != null)
-                return DateTime.tryParse(v['dateTime']);
-              if (v['date'] != null) return DateTime.tryParse(v['date']);
-            }
-            return null;
-          }
+        final summary = (it['summary'] as String?) ?? 'Sin título';
+        final description = it['description'] as String?;
+        final location = it['location'] as String?;
 
-          final start = parseDate(startObj);
-          final end = parseDate(endObj);
-          final summary = (it['summary'] as String?) ?? 'Sin título';
-          final description = it['description'] as String?;
-          final location = it['location'] as String?;
+        parsed.add(
+          Evento(
+            start: start,
+            end: end,
+            summary: summary,
+            description: description,
+            location: location,
+          ),
+        );
+      }
 
-          if (start != null) {
-            parsed.add(
-              Evento(
-                start: start,
-                end: end,
-                summary: summary,
-                description: description,
-                location: location,
-              ),
-            );
-          }
-        }
-
-        events.assignAll(parsed);
-        return;
-      } catch (e) {
+      // 6) Actualiza la lista observable
+      events.assignAll(parsed);
+      if (parsed.isEmpty) {
         Get.snackbar(
-          'Error',
-          'No se pudo cargar eventos desde Google API: ${e.toString()}',
+          'Calendario',
+          'No hay eventos en el rango seleccionado.',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
+        );
+      }
+    } catch (e) {
+      Get.snackbar(
+        'Error',
+        'No se pudo cargar eventos: $e',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  // ⭐️ Llama esto después de login (o al abrir Home) para auto-seleccionar ID
+  Future<void> ensureCalendarId() async {
+    // Siempre solicitar selección de calendario al iniciar sesión (sin persistir)
+    _calendarId.value = '';
+    calendarIdCtrl.text = '';
+
+    try {
+      final items = await GoogleCalendarService.listCalendars();
+      if (items.isEmpty) {
+        Get.snackbar(
+          'Calendario',
+          'No se encontraron calendarios en tu cuenta',
         );
         return;
       }
+
+      // Normaliza items -> {id, summary, primary}
+      final options = items
+          .map<Map<String, dynamic>>(
+            (c) => {
+              'id': (c['id'] as String?) ?? '',
+              'summary':
+                  (c['summary'] as String?) ??
+                  (c['id'] as String? ?? 'Sin nombre'),
+              'primary': c['primary'] == true,
+            },
+          )
+          .where((m) => (m['id'] as String).isNotEmpty)
+          .toList();
+
+      if (options.isEmpty) {
+        Get.snackbar(
+          'Calendario',
+          'No se pudo determinar ningún calendario válido',
+        );
+        return;
+      }
+
+      // Siempre abrir picker para seleccionar calendario
+      final String? chosenId = await _pickCalendarId(options);
+
+      if (chosenId == null || chosenId.isEmpty) {
+        // Usuario canceló el diálogo o no eligió
+        Get.snackbar('Calendario', 'Selección cancelada');
+        return;
+      }
+
+      // Actualiza sólo en memoria, no persiste
+      _calendarId.value = chosenId; // solo en memoria durante esta sesión
+      calendarIdCtrl.text = chosenId;
+      Get.snackbar('Calendario', 'Calendario seleccionado');
+    } catch (e) {
+      Get.snackbar('Calendario', 'No se pudo configurar automáticamente: $e');
     }
+  }
+
+  Future<String?> _pickCalendarId(List<Map<String, dynamic>> options) async {
+    // Usamos VModal.show para renderizar la lista de calendarios.
+    // Al tocar una opción, cerramos el modal devolviendo el id seleccionado.
+    return VModal.show<String>(
+      title: 'Selecciona tu calendario',
+      confirmText: 'Cerrar',
+      canClose: () =>
+          _calendarId.value.isNotEmpty, // bloquea cierre hasta seleccionar
+      children: [
+        ...options.map((opt) {
+          final isPrimary = (opt['primary'] == true);
+          final id = opt['id'] as String;
+          final summary = opt['summary'] as String;
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            onTap: () {
+              _calendarId.value = id; // marca selección para canClose
+              VModal.close<String>(result: id);
+            },
+            leading: isPrimary
+                ? const Icon(Icons.star)
+                : const SizedBox(width: 24),
+            title: Text(
+              summary,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              id,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+          );
+        }),
+      ],
+      onConfirm: () async => true,
+      showCancel: false,
+      leadingIcon: const Icon(Icons.event),
+    );
   }
 
   // Reemplazado: ahora hace pick + crop/resize con ImageCropper
@@ -372,15 +483,151 @@ class ConfiguracionController extends GetxController {
     _storage.write('logo', '');
   }
 
-  /// Elimina un evento de la lista local de eventos.
-  /// Actualmente solo lo quita de la colección `events` en memoria.
-  /// Si en el futuro quieres persistir o borrar en la API, extiende este método.
-  void removeEvent(Evento e) {
+  /// Elimina un evento también en Google Calendar usando la API
+  /// 1) Busca el eventId real con una consulta acotada por tiempo y título
+  /// 2) Envía DELETE a /calendars/{calendarId}/events/{eventId}
+  /// 3) Si el borrado en API es exitoso (204/200/410), lo quita de la lista local
+  Future<void> removeEvent(Evento e) async {
     try {
+      // Asegurar calendarId seleccionado
+      var id = _calendarId.value.trim();
+      if (id.isEmpty) {
+        await ensureCalendarId();
+        id = _calendarId.value.trim();
+        if (id.isEmpty) {
+          Get.snackbar(
+            'Calendario',
+            'Debes seleccionar un calendario para eliminar eventos.',
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.orange,
+            colorText: Colors.white,
+          );
+          return;
+        }
+      }
+
+      // Access token de Google desde la sesión de Supabase
+      final token = Supabase.instance.client.auth.currentSession?.providerToken;
+      if (token == null || token.isEmpty) {
+        Get.snackbar(
+          'Sesión requerida',
+          'No se encontró access token de Google. Inicia sesión nuevamente con permisos de Calendar.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
+
+      // ===== Paso 1: localizar el eventId real =====
+      // Acotamos búsqueda por tiempo en torno al inicio del evento
+      final start = e.start.toUtc();
+      final timeMin = start
+          .subtract(const Duration(hours: 12))
+          .toIso8601String();
+      final timeMax = start.add(const Duration(hours: 12)).toIso8601String();
+
+      final listUri = Uri.https(
+        'www.googleapis.com',
+        '/calendar/v3/calendars/$id/events',
+        {
+          'singleEvents': 'true',
+          'orderBy': 'startTime',
+          'timeMin': timeMin,
+          'timeMax': timeMax,
+          'maxResults': '50',
+          'q': e.summary, // filtra por título similar
+        },
+      );
+
+      final listResp = await http.get(
+        listUri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (listResp.statusCode != 200) {
+        throw Exception(
+          'No se pudo localizar el evento (HTTP ${listResp.statusCode}): ${listResp.body}',
+        );
+      }
+
+      DateTime? parseDate(dynamic v) {
+        if (v == null) return null;
+        if (v is String) return DateTime.tryParse(v);
+        if (v is Map<String, dynamic>) {
+          if (v['dateTime'] != null) return DateTime.tryParse(v['dateTime']);
+          if (v['date'] != null) return DateTime.tryParse(v['date']);
+        }
+        return null;
+      }
+
+      String? eventId;
+      final listData = jsonDecode(listResp.body) as Map<String, dynamic>;
+      final items = (listData['items'] as List<dynamic>?) ?? const [];
+
+      // Elegimos el primero que coincida por título y con hora de inicio cercana
+      for (final it in items.cast<Map<String, dynamic>>()) {
+        final summary = (it['summary'] as String?) ?? '';
+        final startObj = it['start'];
+        final apiStart = parseDate(startObj)?.toUtc();
+        if (summary.trim() != e.summary.trim() || apiStart == null) continue;
+        final diff = apiStart.difference(start.toUtc()).abs();
+        if (diff <= const Duration(minutes: 10)) {
+          // tolerancia
+          eventId = it['id'] as String?;
+          break;
+        }
+      }
+
+      if (eventId == null) {
+        // No se localizó con tolerancia estrecha; como fallback, tomar el primero por título
+        for (final it in items.cast<Map<String, dynamic>>()) {
+          final summary = (it['summary'] as String?) ?? '';
+          if (summary.trim() == e.summary.trim()) {
+            eventId = it['id'] as String?;
+            break;
+          }
+        }
+      }
+
+      if (eventId == null) {
+        Get.snackbar(
+          'No encontrado',
+          'No se pudo localizar el evento en Google Calendar para eliminarlo.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.orange,
+          colorText: Colors.white,
+        );
+        return;
+      }
+
+      // ===== Paso 2: DELETE en Google Calendar =====
+      final delUri = Uri.https(
+        'www.googleapis.com',
+        '/calendar/v3/calendars/$id/events/$eventId',
+      );
+      final delResp = await http.delete(
+        delUri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      // 204 No Content es éxito; algunos proxies devuelven 200
+      if (delResp.statusCode != 204 &&
+          delResp.statusCode != 200 &&
+          delResp.statusCode != 410) {
+        print(
+          'Google Calendar DELETE response: ${delResp.statusCode} ${delResp.body}',
+        ); // debug
+        throw Exception(
+          'Error al eliminar en Google Calendar (HTTP ${delResp.statusCode}): ${delResp.body}',
+        );
+      }
+
+      // ===== Paso 3: sincronizar lista local =====
       events.removeWhere((x) => x.start == e.start && x.summary == e.summary);
       Get.snackbar(
         'Evento eliminado',
-        'El evento "${e.summary}" ha sido eliminado de la lista local.',
+        'El evento "${e.summary}" se eliminó de Google Calendar y de la lista local.',
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.green,
         colorText: Colors.white,

@@ -50,7 +50,7 @@ class LoginView extends GetView<LoginController> {
                 ? Positioned.fill(
                     child: AbsorbPointer(
                       child: Container(
-                        color: Colors.black.withOpacity(0.25),
+                        color: Colors.black.withValues(alpha: 0.5),
                         child: const Center(child: CircularProgressIndicator()),
                       ),
                     ),

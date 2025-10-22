@@ -1,13 +1,57 @@
-import 'package:flutter/material.dart';
+/* import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:async';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../services/google_auth_service.dart';
+import '../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'calendar_api_widget.dart';
 import 'dart:io' show Platform;
 
-class MiCalendarioConAPI extends StatelessWidget {
+class MiCalendarioConAPI extends StatefulWidget {
   const MiCalendarioConAPI({super.key});
 
-  bool get _isPlatformUnsupported {
+  @override
+  State<MiCalendarioConAPI> createState() => _MiCalendarioConAPIState();
+}
+
+class _MiCalendarioConAPIState extends State<MiCalendarioConAPI> {
+  GoogleSignInAccount? _googleUser = TransparentGoogleAuthService.currentUser;
+  bool _isPlatformUnsupported = false;
+  User? _supabaseUser = SupabaseService.instance.client.auth.currentUser;
+
+  StreamSubscription<GoogleSignInAccount?>? _gSub;
+  StreamSubscription<AuthState>? _sSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _isPlatformUnsupported = _computePlatformUnsupported();
+
+    // Listen to google sign-in changes
+    _gSub = TransparentGoogleAuthService.onCurrentUserChanged.listen((u) {
+      setState(() {
+        _googleUser = u;
+      });
+    });
+
+    // Listen to Supabase auth changes
+    try {
+      _sSub = SupabaseService.instance.authStateChanges.listen((_) {
+        setState(() {
+          try {
+            _supabaseUser = SupabaseService.instance.client.auth.currentUser;
+          } catch (e) {
+            _supabaseUser = null;
+          }
+        });
+      });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  bool _computePlatformUnsupported() {
     if (kIsWeb) return false;
     try {
       return Platform.isMacOS;
@@ -17,11 +61,15 @@ class MiCalendarioConAPI extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final isAuthenticated = TransparentGoogleAuthService.isSignedIn;
-    final user = TransparentGoogleAuthService.currentUser;
-    final isPlatformUnsupported = _isPlatformUnsupported;
+  void dispose() {
+    _gSub?.cancel();
+    _sSub?.cancel();
+    super.dispose();
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final isAuthenticated = _googleUser != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -30,12 +78,12 @@ class MiCalendarioConAPI extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                isPlatformUnsupported
+                _isPlatformUnsupported
                     ? Icons.warning
                     : (isAuthenticated
                           ? Icons.event_available
                           : Icons.warning_amber),
-                color: isPlatformUnsupported
+                color: _isPlatformUnsupported
                     ? Colors.red
                     : (isAuthenticated ? Colors.green : Colors.orange),
                 size: 28,
@@ -49,7 +97,7 @@ class MiCalendarioConAPI extends StatelessWidget {
                       'Mi Calendario',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
-                            color: isPlatformUnsupported
+                            color: _isPlatformUnsupported
                                 ? Colors.red
                                 : (isAuthenticated
                                       ? Colors.green
@@ -60,13 +108,13 @@ class MiCalendarioConAPI extends StatelessWidget {
                     Row(
                       children: [
                         Icon(
-                          isPlatformUnsupported
+                          _isPlatformUnsupported
                               ? Icons.error
                               : (isAuthenticated
                                     ? Icons.verified_user
                                     : Icons.warning_amber),
                           size: 16,
-                          color: isPlatformUnsupported
+                          color: _isPlatformUnsupported
                               ? Colors.red.shade600
                               : (isAuthenticated
                                     ? Colors.green.shade600
@@ -75,14 +123,16 @@ class MiCalendarioConAPI extends StatelessWidget {
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            isPlatformUnsupported
+                            _isPlatformUnsupported
                                 ? 'Funcionalidad limitada en esta plataforma'
                                 : (isAuthenticated
-                                      ? 'Conectado: ${user?.displayName ?? user?.email ?? "Usuario autenticado"}'
-                                      : 'No autenticado'),
+                                      ? 'Conectado: ${_googleUser?.displayName ?? _googleUser?.email ?? "Usuario autenticado"}'
+                                      : (_supabaseUser != null
+                                            ? 'Cuenta app conectada pero Google no vinculado'
+                                            : 'No autenticado')),
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
-                                  color: isPlatformUnsupported
+                                  color: _isPlatformUnsupported
                                       ? Colors.red.shade600
                                       : (isAuthenticated
                                             ? Colors.green.shade600
@@ -93,7 +143,7 @@ class MiCalendarioConAPI extends StatelessWidget {
                         ),
                       ],
                     ),
-                    if (isAuthenticated && !isPlatformUnsupported) ...[
+                    if (isAuthenticated && !_isPlatformUnsupported) ...[
                       const SizedBox(height: 4),
                       Row(
                         children: [
@@ -123,7 +173,7 @@ class MiCalendarioConAPI extends StatelessWidget {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: isPlatformUnsupported
+            child: _isPlatformUnsupported
                 ? _buildPlatformUnsupportedView(context)
                 : (isAuthenticated
                       ? const GoogleCalendarApiWidget(height: 500)
@@ -231,6 +281,37 @@ class MiCalendarioConAPI extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          if (_supabaseUser != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  // Si la app ya tiene sesión en Supabase, permitimos iniciar
+                  // el flujo de OAuth para vincular la cuenta de Google en el
+                  // backend (abre navegador/external app).
+                  try {
+                    await Supabase.instance.client.auth.signInWithOAuth(
+                      OAuthProvider.google,
+                      redirectTo: 'com.vetcitas.app://login-callback',
+                      authScreenLaunchMode: LaunchMode.externalApplication,
+                      scopes: 'email profile openid',
+                      queryParams: {'prompt': 'select_account'},
+                    );
+                  } catch (e) {
+                    // fallback: intentar login local con google_sign_in
+                    await TransparentGoogleAuthService.initializeTransparentAuth();
+                  }
+                },
+                icon: const Icon(Icons.link),
+                label: const Text('Vincular cuenta de Google'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade600,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           ElevatedButton.icon(
             onPressed: () async {
               await TransparentGoogleAuthService.initializeTransparentAuth();
@@ -247,3 +328,4 @@ class MiCalendarioConAPI extends StatelessWidget {
     );
   }
 }
+ */

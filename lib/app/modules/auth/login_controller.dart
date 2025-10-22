@@ -1,9 +1,51 @@
+import 'dart:async';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/supabase_service.dart';
 
 class LoginController extends GetxController {
+  StreamSubscription<AuthState>? _authSub; // ⭐️ Evitar múltiples listeners
+  bool _navigating = false; // ⭐️ Anti-bucle de navegación
+
+  @override
+  void onInit() {
+    super.onInit();
+    // ⭐️ Listener centralizado del estado de autenticación (única suscripción)
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((
+      data,
+    ) async {
+      final event = data.event;
+
+      if (event == AuthChangeEvent.signedIn) {
+        // Cierra spinners si volvemos del deep link
+        loading.value = false;
+        final ok = await insertarUsuario();
+        if (!ok) {
+          await Supabase.instance.client.auth.signOut();
+          return;
+        }
+        // Navega solo si no estamos en /home y no hay navegación en curso
+        if (!_navigating && Get.currentRoute != '/home') {
+          _navigating = true; // ⭐️ antirrebote
+          Get.offAllNamed('/home');
+          Future.delayed(const Duration(milliseconds: 200), () {
+            _navigating = false;
+          });
+        }
+      } else if (event == AuthChangeEvent.signedOut) {
+        // Navega solo si no estamos en /login y no hay navegación en curso
+        if (!_navigating && Get.currentRoute != '/login') {
+          _navigating = true; // ⭐️ antirrebote
+          Get.offAllNamed('/login');
+          Future.delayed(const Duration(milliseconds: 200), () {
+            _navigating = false;
+          });
+        }
+      }
+    });
+  }
+
   final email = ''.obs;
   final password = ''.obs;
   final loading = false.obs;
@@ -37,7 +79,7 @@ class LoginController extends GetxController {
           await Supabase.instance.client.auth.signOut();
           return;
         }
-        Get.offAllNamed('/home');
+        // ⭐️ La navegación a /home la hará el listener en AuthChangeEvent.signedIn
       }
     } catch (e) {
       Get.snackbar('Error', e.toString());
@@ -81,7 +123,7 @@ class LoginController extends GetxController {
           await Supabase.instance.client.auth.signOut();
           return;
         }
-        Get.offAllNamed('/home');
+        // ⭐️ La navegación a /home la hará el listener en AuthChangeEvent.signedIn
       }
     } catch (e) {
       Get.snackbar('Error', e.toString());
@@ -126,7 +168,8 @@ class LoginController extends GetxController {
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: 'com.vetcitas.app://login-callback', // tu deep link
-        authScreenLaunchMode: LaunchMode.externalApplication,
+        authScreenLaunchMode: LaunchMode
+            .externalApplication, // ⭐️ Usa ASWebAuthenticationSession/Custom Tabs
         scopes: 'email profile openid',
         queryParams: {'prompt': 'select_account'},
       );
@@ -186,5 +229,12 @@ class LoginController extends GetxController {
       );
       return false;
     }
+  }
+
+  @override
+  void onClose() {
+    _authSub?.cancel();
+    _authSub = null;
+    super.onClose();
   }
 }

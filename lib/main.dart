@@ -38,26 +38,6 @@ void main() async {
     debugPrint('⚠️ SUPABASE_URL or SUPABASE_ANON_KEY not found in env');
   }
 
-  Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-    final event = data.event;
-    // final session = data.session; // si lo necesitas
-    switch (event) {
-      case AuthChangeEvent.signedIn:
-        final loginCtrl = Get.isRegistered<LoginController>()
-            ? Get.find<LoginController>()
-            : Get.put(LoginController());
-        await loginCtrl.insertarUsuario();
-        // Usuario autenticado: ve al home
-        Get.offAllNamed('/home');
-        break;
-      case AuthChangeEvent.signedOut:
-        Get.offAllNamed('/login');
-        break;
-      default:
-        break;
-    }
-  });
-
   runApp(const VetApp());
 }
 

@@ -113,8 +113,6 @@ class AppLayout extends StatelessWidget {
                       if (Navigator.of(context).canPop()) {
                         Navigator.of(context).pop();
                       }
-                      // ⭐️ Navegar al login (el listener de auth también puede manejarlo)
-                      Get.offAllNamed('/login');
                       return true; // cerrar modal
                     } catch (e) {
                       Get.snackbar(

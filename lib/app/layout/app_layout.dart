@@ -113,6 +113,10 @@ class AppLayout extends StatelessWidget {
                       if (Navigator.of(context).canPop()) {
                         Navigator.of(context).pop();
                       }
+                      // ⭐️ Navega a login inmediatamente tras signOut (el listener del LoginController no está activo en Home)
+                      if (Get.currentRoute != '/login') {
+                        Get.offAllNamed('/login');
+                      }
                       return true; // cerrar modal
                     } catch (e) {
                       Get.snackbar(

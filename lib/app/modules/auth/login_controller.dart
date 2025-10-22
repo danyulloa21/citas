@@ -34,7 +34,8 @@ class LoginController extends GetxController {
           });
         }
       } else if (event == AuthChangeEvent.signedOut) {
-        // Navega solo si no estamos en /login y no hay navegación en curso
+        loading.value =
+            false; // ⭐️ asegúrate de ocultar spinner si el usuario cancela/cierra sesión
         if (!_navigating && Get.currentRoute != '/login') {
           _navigating = true; // ⭐️ antirrebote
           Get.offAllNamed('/login');
@@ -163,7 +164,8 @@ class LoginController extends GetxController {
 
   Future<void> signInWithGoogle() async {
     if (loading.value) return;
-    loading.value = true;
+    loading.value =
+        true; // ⭐️ permanecemos en loading hasta recibir signedIn o un error
     try {
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.google,
@@ -173,18 +175,17 @@ class LoginController extends GetxController {
         scopes: 'email profile openid',
         queryParams: {'prompt': 'select_account'},
       );
-      // ⭐️ El upsert del perfil se ejecutará al recibir AuthChangeEvent.signedIn
-      // La sesión se establecerá al regresar por deep link
+      // ⭐️ No seteamos loading=false aquí; lo haremos en onAuthStateChange.signedIn
     } on AuthException catch (e) {
+      loading.value = false; // error: quitamos spinner
       Get.snackbar(
         'Error de autenticación',
         e.message,
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
+      loading.value = false; // error inesperado: quitamos spinner
       Get.snackbar('Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
-    } finally {
-      loading.value = false;
     }
   }
 

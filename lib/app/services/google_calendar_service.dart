@@ -1,16 +1,13 @@
 // lib/app/services/google_calendar_service.dart
 import 'dart:convert';
+import 'package:agenda_citas/app/modules/configuracion/controllers/configuracion_controller.dart';
+import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class GoogleCalendarService {
-  // ⭐️ Obtiene el access token (el de Google) desde la sesión de Supabase
-  static String? get accessToken =>
-      Supabase.instance.client.auth.currentSession?.providerToken;
-
-  // ⭐️ Lista los calendarios del usuario
   static Future<List<Map<String, dynamic>>> listCalendars() async {
-    final token = accessToken;
+    final token = Get.find<ConfiguracionController>().googleAccessToken;
     if (token == null) {
       throw Exception('No hay providerToken en la sesión (Google).');
     }

@@ -47,6 +47,26 @@ class ConfiguracionController extends GetxController {
     _storage.write('nombreClinica', nombre);
   }
 
+  String? get googleAccessToken =>
+      Supabase.instance.client.auth.currentSession?.providerToken;
+
+  String? requireGoogleAccessToken({bool silent = false}) {
+    final t = googleAccessToken;
+    if (t == null || t.isEmpty) {
+      if (!silent) {
+        Get.snackbar(
+          'Autenticación requerida',
+          'No se encontró un access token de Google en la sesión. Inicia sesión nuevamente con permisos de Calendar.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+      }
+      return null;
+    }
+    return t;
+  }
+
   void toggleTheme(bool isDark) {
     _isDark.value = isDark;
     _storage.write('isDark', isDark);
@@ -136,6 +156,19 @@ class ConfiguracionController extends GetxController {
   }
 
   Future<void> loadEventsFromCalendar() async {
+    await loadEventsForDay(DateTime.now()); // hoy
+  }
+
+  Future<void> loadEventsForDay(DateTime dayLocal) async {
+    final startOfDay = DateTime(dayLocal.year, dayLocal.month, dayLocal.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+    await _loadEventsInRange(startOfDay, endOfDay);
+  }
+
+  Future<void> _loadEventsInRange(
+    DateTime startLocal,
+    DateTime endLocal,
+  ) async {
     // 1) Asegura que exista un calendarId seleccionado para esta sesión
     var id = _calendarId.value.trim();
     if (id.isEmpty) {
@@ -154,32 +187,15 @@ class ConfiguracionController extends GetxController {
     }
 
     // 2) Obtén el access token de Google desde la sesión de Supabase (requiere scope calendar.readonly)
-    final token = Supabase.instance.client.auth.currentSession?.providerToken;
+    final token = requireGoogleAccessToken();
     if (token == null || token.isEmpty) {
-      Get.snackbar(
-        'Autenticación requerida',
-        'No se encontró un access token de Google en la sesión. Inicia sesión nuevamente con permisos de Calendar.',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
       return;
     }
 
     try {
       // 3) Define ventana de tiempo: desde hoy (00:00 local) hasta +365 días
-      final nowLocal = DateTime.now();
-      final startOfTodayLocal = DateTime(
-        nowLocal.year,
-        nowLocal.month,
-        nowLocal.day,
-      );
-      final timeMin = startOfTodayLocal.toUtc().toIso8601String();
-      final timeMax = startOfTodayLocal
-          .add(const Duration(days: 365))
-          .toUtc()
-          .toIso8601String();
-
+      final timeMin = startLocal.toUtc().toIso8601String();
+      final timeMax = endLocal.toUtc().toIso8601String();
       // 4) Llama Google Calendar API (Events: list)
       final uri =
           Uri.https('www.googleapis.com', '/calendar/v3/calendars/$id/events', {
@@ -188,6 +204,7 @@ class ConfiguracionController extends GetxController {
             'timeMin': timeMin,
             'timeMax': timeMax,
             'maxResults': '250',
+            'showDeleted': 'false',
           });
 
       final resp = await http.get(
@@ -242,13 +259,6 @@ class ConfiguracionController extends GetxController {
 
       // 6) Actualiza la lista observable
       events.assignAll(parsed);
-      if (parsed.isEmpty) {
-        Get.snackbar(
-          'Calendario',
-          'No hay eventos en el rango seleccionado.',
-          snackPosition: SnackPosition.BOTTOM,
-        );
-      }
     } catch (e) {
       Get.snackbar(
         'Error',
@@ -257,6 +267,120 @@ class ConfiguracionController extends GetxController {
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
+    }
+  }
+
+  /// ⭐️ Crea un evento en el calendario actualmente seleccionado (solo sesión)
+  /// Devuelve true si Google Calendar confirmó la creación.
+  Future<bool> addEventToCalendar({
+    required String summary,
+    required DateTime startLocal,
+    required DateTime endLocal,
+    String? description,
+    String? location,
+    List<String>? attendeesEmails,
+    bool allDay = false,
+  }) async {
+    try {
+      // 1) Asegurar calendarId
+      var id = _calendarId.value.trim();
+      if (id.isEmpty) {
+        await ensureCalendarId();
+        id = _calendarId.value.trim();
+        if (id.isEmpty) {
+          Get.snackbar(
+            'Calendario',
+            'Debes seleccionar un calendario antes de crear eventos.',
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.orange,
+            colorText: Colors.white,
+          );
+          return false;
+        }
+      }
+
+      // 2) Token de Google
+      final token = requireGoogleAccessToken();
+      if (token == null || token.isEmpty) return false;
+
+      // 3) Construir payload
+      Map<String, dynamic> startJson;
+      Map<String, dynamic> endJson;
+      if (allDay) {
+        // Evento de todo el día usa 'date' sin hora (YYYY-MM-DD)
+        final sDate = DateTime(
+          startLocal.year,
+          startLocal.month,
+          startLocal.day,
+        );
+        final eDate = DateTime(endLocal.year, endLocal.month, endLocal.day);
+        startJson = {'date': sDate.toIso8601String().substring(0, 10)};
+        endJson = {'date': eDate.toIso8601String().substring(0, 10)};
+      } else {
+        // Evento con hora usa 'dateTime' en RFC3339 (usamos UTC)
+        startJson = {'dateTime': startLocal.toUtc().toIso8601String()};
+        endJson = {'dateTime': endLocal.toUtc().toIso8601String()};
+      }
+
+      final body = <String, dynamic>{
+        'summary': summary,
+        'start': startJson,
+        'end': endJson,
+        if (description != null && description.trim().isNotEmpty)
+          'description': description,
+        if (location != null && location.trim().isNotEmpty)
+          'location': location,
+        if (attendeesEmails != null && attendeesEmails.isNotEmpty)
+          'attendees': attendeesEmails.map((e) => {'email': e}).toList(),
+      };
+
+      final uri = Uri.https(
+        'www.googleapis.com',
+        '/calendar/v3/calendars/$id/events',
+      );
+
+      final resp = await http.post(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (resp.statusCode != 200 && resp.statusCode != 201) {
+        throw Exception(
+          'Creación fallida (HTTP ${resp.statusCode}): ${resp.body}',
+        );
+      }
+
+      // 4) Actualizar lista local para reflejo inmediato
+      final newEvt = Evento(
+        start: startLocal,
+        end: endLocal,
+        summary: summary,
+        description: description,
+        location: location,
+      );
+      events.add(newEvt);
+
+      Get.snackbar(
+        'Evento creado',
+        '"$summary" agregado a tu calendario.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+      );
+      return true;
+    } catch (e) {
+      Get.snackbar(
+        'Error',
+        'No se pudo crear el evento: $e',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return false;
     }
   }
 
@@ -507,15 +631,8 @@ class ConfiguracionController extends GetxController {
       }
 
       // Access token de Google desde la sesión de Supabase
-      final token = Supabase.instance.client.auth.currentSession?.providerToken;
+      final token = requireGoogleAccessToken();
       if (token == null || token.isEmpty) {
-        Get.snackbar(
-          'Sesión requerida',
-          'No se encontró access token de Google. Inicia sesión nuevamente con permisos de Calendar.',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
         return;
       }
 

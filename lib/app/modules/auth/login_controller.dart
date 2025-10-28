@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../configuracion/controllers/configuracion_controller.dart';
@@ -35,6 +37,13 @@ class LoginController extends GetxController {
                   ConfiguracionController(),
                   permanent: true,
                 );
+          await OneSignal.Notifications.requestPermission(true);
+
+          // iniciar sesion para push notifications
+          final user = Supabase.instance.client.auth.currentUser;
+          await OneSignal.login(user!.id);
+          debugPrint('✅ OneSignal login for user ${user.id}');
+
           await configCtrl.ensureCalendarId();
         } catch (e) {
           // Si por alguna razón no se puede crear/encontrar el controlador, no bloqueamos el flujo
@@ -52,6 +61,7 @@ class LoginController extends GetxController {
             false; // ⭐️ asegúrate de ocultar spinner si el usuario cancela/cierra sesión
         if (!_navigating && Get.currentRoute != '/login') {
           _navigating = true; // ⭐️ antirrebote
+          await OneSignal.logout();
           Get.offAllNamed('/login');
           Future.delayed(const Duration(milliseconds: 200), () {
             _navigating = false;

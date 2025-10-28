@@ -6,6 +6,7 @@ import 'app/routes/app_pages.dart';
 import 'app/services/theme_service.dart';
 import 'app/services/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+// import 'package:onesignal_flutter/onesignal_flutter.dart'; // ⭐️ OneSignal
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,21 @@ void main() async {
       await Supabase.initialize(url: supaUrl, anonKey: supaKey);
       SupabaseService.instance.client = Supabase.instance.client;
       debugPrint('✅ Supabase initialized');
+      // ⭐️ Initialize OneSignal (solo inicializa aquí; login/logout y permisos se hacen tras el login de Google)
+      /* final oneSignalAppId = dotenv.env['ONESIGNAL_APP_ID'];
+      if (oneSignalAppId != null && oneSignalAppId.isNotEmpty) {
+        try {
+          OneSignal.Debug.setLogLevel(
+            OSLogLevel.verbose,
+          ); // ⭐️ útil mientras integras
+          OneSignal.initialize(oneSignalAppId);
+          debugPrint('✅ OneSignal initialized');
+        } catch (e) {
+          debugPrint('⚠️ OneSignal init failed: $e');
+        }
+      } else {
+        debugPrint('⚠️ ONESIGNAL_APP_ID not found in env');
+      } */
     } catch (e) {
       debugPrint('⚠️ Supabase init failed: $e');
     }
